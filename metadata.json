@@ -1,0 +1,6 @@
+{
+  "name": "OOPS! - 2D Physics Chain-Reaction Puzzle Game",
+  "description": "A cute, hilarious 2D physics puzzle game featuring 200 progressive levels across 10 themed worlds, hybrid contraption gameplay, and touch-first mobile controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
