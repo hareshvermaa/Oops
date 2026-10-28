@@ -95,7 +95,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </div>
 
-          {/* Developer / QA Review Mode */}
+          {/* Developer / QA Review Mode (never shipped in release builds) */}
+          {import.meta.env.DEV && (
           <div className="flex items-center justify-between p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/60">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-500/10 text-purple-400 rounded-xl">
@@ -122,6 +123,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {devUnlocked ? 'Unlocked!' : 'Unlock'}
             </button>
           </div>
+          )}
 
           {/* Reset Save Data */}
           <div className="p-3.5 bg-rose-950/20 rounded-2xl border border-rose-900/30 flex flex-col gap-2">

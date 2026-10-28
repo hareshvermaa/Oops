@@ -13,6 +13,7 @@ interface GameCanvasProps {
   onUpdateGadgetPosition: (id: string, x: number, y: number) => void;
   onUpdateGadgetAngle: (id: string, angle: number) => void;
   onWin: () => void;
+  onFail?: (info: { reason: 'stuck' | 'timeout'; nearMiss: boolean }) => void;
 }
 
 type DragMode = 'TRANSLATE' | 'ROTATE' | null;
@@ -27,6 +28,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   onUpdateGadgetPosition,
   onUpdateGadgetAngle,
   onWin,
+  onFail,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<PhysicsEngine | null>(null);
@@ -39,6 +41,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Use a ref for onWin to guarantee the engine always executes the freshest closure!
   const onWinRef = useRef(onWin);
   onWinRef.current = onWin;
+  const onFailRef = useRef(onFail);
+  onFailRef.current = onFail;
 
   // Initialize and reload engine on level change
   useEffect(() => {
@@ -55,15 +59,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     );
     engineRef.current = engine;
+    engine.setFailCallback((reason) => {
+      const stats = engine.getRunStats();
+      const goalW = level.targetZone.width || 140;
+      onFailRef.current?.({ reason, nearMiss: stats.minDistToTarget < goalW * 0.9 + 70 });
+    });
     engine.setGadgets(placedGadgets);
     engine.setSelectedGadgetId(selectedGadgetId);
     engine.setGhostHintGadget(ghostHintGadget);
     engine.startRenderLoop();
 
     return () => {
-      engine.stopRenderLoop();
+      engine.destroy();
     };
-  }, [level.id]);
+  }, [level]);
 
   // Keep winCallback current on every render
   useEffect(() => {
@@ -91,6 +100,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     if (!engineRef.current) return;
     if (simulationMode === 'RUNNING') {
+      // Always start from a clean initial state (also when retrying straight after an OOPS)
+      engineRef.current.resetSimulation();
       engineRef.current.startSimulation();
     } else if (simulationMode === 'SETUP') {
       engineRef.current.resetSimulation();
@@ -200,7 +211,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full flex-1 min-h-0 flex items-center justify-center bg-slate-950 overflow-hidden touch-none p-1.5"
+      className="relative w-full flex-1 min-h-0 flex items-center justify-center bg-pink-50 overflow-hidden touch-none p-1.5"
     >
       <canvas
         ref={canvasRef}
@@ -214,11 +225,19 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         style={{ touchAction: 'none' }}
       />
 
-      {/* Level 1 Helper Banner when 0 gadgets placed */}
-      {level.id === 1 && placedGadgets.length === 0 && simulationMode === 'SETUP' && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl shadow-xl text-[11px] flex items-center gap-1.5 animate-bounce pointer-events-none z-30 border-2 border-white max-w-[90%] text-center">
-          <span>👇</span>
-          <span>Tap or drag a Ramp from the tray below to guide the egg into the pan!</span>
+      {/* Guided explanations are intentionally limited to the first two levels. */}
+      {(level.id === 1 || level.id === 2) && simulationMode === 'SETUP' && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-pink-400 text-white font-black px-3 py-1.5 rounded-2xl shadow-xl text-[11px] flex items-center gap-1.5 animate-bounce pointer-events-none z-30 border-2 border-white max-w-[90%] text-center">
+          <span>{placedGadgets.length === 0 ? '👇' : '✨'}</span>
+          <span>
+            {level.id === 1
+              ? placedGadgets.length === 0
+                ? 'Drag a Ramp into place, then press GO!'
+                : 'Drag to position, use the angle control, then press GO!'
+              : placedGadgets.length === 0
+                ? 'Try combining the Ramp and Bouncy Pad, then press GO!'
+                : 'Connect your gadgets into a chain reaction, then press GO!'}
+          </span>
         </div>
       )}
     </div>

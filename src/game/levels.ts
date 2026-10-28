@@ -111,11 +111,11 @@ export const WORLDS: WorldInfo[] = [
   },
 ];
 
-function createLevel(id: number): LevelDefinition {
-  const worldIndex = Math.floor((id - 1) / 20);
+function createLevel(id: number, opts?: { template?: number; worldId?: number }): LevelDefinition {
+  const worldIndex = opts?.worldId ? opts.worldId - 1 : Math.floor((id - 1) / 20);
   const worldId = worldIndex + 1;
   const world = WORLDS[worldIndex];
-  const levelInWorld = ((id - 1) % 20) + 1; // 1 to 20
+  const levelInWorld = opts?.template ?? ((id - 1) % 20) + 1; // 1 to 20
 
   const worldItemTypes: Record<
     number,
@@ -507,6 +507,14 @@ function createLevel(id: number): LevelDefinition {
 export const ALL_LEVELS: Record<number, LevelDefinition> = {};
 for (let i = 1; i <= 200; i++) {
   ALL_LEVELS[i] = createLevel(i);
+}
+
+/**
+ * Hand-made template level (1..20) re-skinned into any world. Used for the opening tutorial
+ * levels of the endless mode and as a guaranteed-solvable fallback if generation ever fails.
+ */
+export function buildTemplateLevel(levelNumber: number, template: number, worldId: number): LevelDefinition {
+  return { ...createLevel(levelNumber, { template, worldId }), tier: 'tutorial' };
 }
 
 export function getLevel(id: number): LevelDefinition {

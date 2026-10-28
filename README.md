@@ -1,13 +1,13 @@
-# OOPS! — 2D Physics Chain-Reaction Puzzle Game
+# OOPS! — Endless 2D Physics Chain-Reaction Puzzle Game
 
-An exceptionally cute, charming, funny, and satisfying 2D physics puzzle game for mobile and web. Players freely place and rotate whimsical gadgets to craft chain reactions that guide lovable cartoon characters into their target goals.
+OOPS! is a colorful, touch-first physics puzzle game. Place and rotate playful gadgets to guide expressive characters into their goals. The game has two guided opening levels followed by procedurally generated, solvable levels with adaptive difficulty and themed ten-level sets.
 
 ---
 
 ## 🌟 Game Highlights
 
-- **200 Progressive Campaign Levels**: Handcrafted across 10 distinct themed worlds.
-- **10 Themed Toybox Worlds**:
+- **Endless Adaptive Levels**: The first two levels teach the controls; later puzzles are procedurally generated and validated against the game's physics engine.
+- **10 Rotating Toybox Themes**: Each theme lasts for a ten-level set before the next theme begins:
   1. *Kitchen Catastrophe*: Morning sunlight, checkered counter tiles, frying pans, and butter pats.
   2. *Messy Bedroom*: Lavender dusk, starry wallpaper, crescent moon, and fluffy snooze pillows.
   3. *Toy Workshop*: Mint blueprint drafting grid, wooden toy blocks, and workbench gears.
@@ -26,6 +26,7 @@ An exceptionally cute, charming, funny, and satisfying 2D physics puzzle game fo
   - *Domino Blocks*: Momentum-transferring toppling blocks.
   - *Seesaws*: Playground teeter-totter levers with realistic fulcrum constraints.
   - *Spring Launchers*: Mechanical jack-in-the-box launchers with explosive launch impulses.
+- **Offline Progression Hub**: Optional daily spin, a short tap mini-game, gadget-card collection, village upgrades, and personal-device records. There are no real-money purchases or global rankings in this offline build.
 - **Pure Procedural Audio**: Low-latency Web Audio sound engine synthesizing clicks, spring boings, wooden taps, breezy whooshes, crystal dings, star pops, and cheerful pentatonic melodies without external audio assets.
 - **Zero-Pill Mobile UI**: Built with strict typographic hierarchy, responsive layout, large touch targets, fine-stepper angle adjustments, and safe local persistence.
 
@@ -52,7 +53,7 @@ Open `http://localhost:3000` in your browser.
 ```bash
 npm test
 ```
-Executes headless Matter.js physics validation across all 200 campaign levels, state transition verifications (SETUP -> RUNNING -> RESET), and save progression logic.
+Executes headless Matter.js physics validation for templates and generated levels, plus campaign simulations for adaptive difficulty.
 
 ### 5. Type Checking & Production Build
 ```bash
@@ -67,7 +68,7 @@ npm run build   # Production Vite bundle into /dist
 ```
 ├── .aistudio/             # AI Studio workspace configuration
 ├── scripts/
-│   └── validate-game.ts   # Headless 200-level physics test runner & state auditor
+│   └── *-test.ts          # Headless generator / template / campaign tests (see OOPS_REDESIGN.md)
 ├── src/
 │   ├── components/
 │   │   ├── ExportGuideModal.tsx    # In-game Android & AdMob packaging guide
@@ -83,7 +84,7 @@ npm run build   # Production Vite bundle into /dist
 │   │   ├── ValidatorScreen.tsx     # Player-facing QA validator screen
 │   │   └── WorldSelectScreen.tsx   # World map with progress & star badges
 │   ├── game/
-│   │   ├── levels.ts               # Complete 200-level definitions & metadata
+│   │   ├── levels.ts               # Hand-built puzzle templates used by the endless generator
 │   │   └── PhysicsEngine.ts        # Custom Matter.js engine & cartoon vector renderer
 │   ├── types/
 │   │   └── game.ts                 # TypeScript interfaces, enums, level schemas
@@ -103,13 +104,7 @@ npm run build   # Production Vite bundle into /dist
 
 ## 📱 Android Packaging & Capacitor Guide
 
-Refer to `ANDROID_BUILD_GUIDE.md` for exact step-by-step instructions:
-1. `npm run build`
-2. `npm install @capacitor/core @capacitor/cli @capacitor/android`
-3. `npx cap init "OOPS!" "com.oops.game" --web-dir "dist"`
-4. `npx cap add android`
-5. Configure portrait orientation in `AndroidManifest.xml` (`android:screenOrientation="portrait"`).
-6. Build signed Android App Bundle (AAB) in Android Studio and upload to Google Play Console.
+The project now includes a Capacitor Android wrapper, configured for portrait play. Build web assets and sync them into the Android project with `npm run android:sync`, then open it in Android Studio with `npm run android:open`. An Android SDK is required for a native build; see `ANDROID_BUILD_GUIDE.md`.
 
 ---
 
@@ -118,4 +113,6 @@ Refer to `ANDROID_BUILD_GUIDE.md` for exact step-by-step instructions:
 - No third-party tracking scripts, telemetry, or analytics.
 - No external CDN network calls during gameplay.
 - No hardcoded secrets, API keys, or fake publisher IDs.
-- Child-friendly design with transparent, non-deceptive rewards and zero dark patterns.
+- Progress is currently stored locally in the device/browser. Local saves and currencies can be modified by a device owner and are **not tamper-proof**.
+- This offline build does not provide verified purchases, global rankings, or rewarded referral payouts. Those require a trusted backend and platform purchase verification; do not treat client-side values as authoritative.
+- Rewards and optional offers should remain transparent, non-coercive, and independent of inferred frustration or spending vulnerability.

@@ -49,11 +49,28 @@ export class PhysicsEngine {
   private rafId: number | null = null;
   private lastTime: number = 0;
   public physicsUpdatesSinceGo: number = 0;
+  /** Headless/background simulations (level generation) must never make noise. */
+  public silent: boolean = false;
+
+  // Failure detection / run statistics (used by the UI and by the level generator)
+  private failCallback?: (reason: 'stuck' | 'timeout') => void;
+  private hasFailed: boolean = false;
+  private stillSteps: number = 0;
+  private minDistToTarget: number = Infinity;
+  private trajectory: { x: number; y: number }[] = [];
+
+  // Cached (optionally hue-shifted) backdrop
+  private bgCache: HTMLCanvasElement | null = null;
+  private bgCacheLevel: LevelDefinition | null = null;
+  private bgLastRefresh: number = 0;
 
   // Eye animation, breathing, squash-and-stretch, and collision feedback
   private lastImpactTime: number = 0;
   private animationTime: number = 0;
   private impactSquashMap: Map<string, number> = new Map();
+  private lastTouchTimeByBody: Map<string, number> = new Map();
+  private collisionStartHandler?: (event: Matter.IEventCollision<Matter.Engine>) => void;
+  private destroyed: boolean = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -79,8 +96,56 @@ export class PhysicsEngine {
     this.loadLevel(level);
   }
 
+  public destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.stopRenderLoop();
+    if (this.collisionStartHandler) {
+      Events.off(this.engine, 'collisionStart', this.collisionStartHandler);
+    }
+    World.clear(this.world, false);
+    Engine.clear(this.engine);
+    this.dynamicBodies.clear();
+    this.lastTouchTimeByBody.clear();
+    this.gadgetBodies = [];
+    this.staticObstacleBodies = [];
+    this.targetSensor = null;
+    this.particles = [];
+    this.confetti = [];
+    this.bgCache = null;
+    this.bgCacheLevel = null;
+  }
+
   public setWinCallback(cb: () => void) {
     this.winCallback = cb;
+  }
+
+  public setFailCallback(cb: (reason: 'stuck' | 'timeout') => void) {
+    this.failCallback = cb;
+  }
+
+  /** Stats of the current / last run: how close the hero got, how long, and whether it failed. */
+  public getRunStats() {
+    return {
+      won: this.won,
+      failed: this.hasFailed,
+      steps: this.physicsUpdatesSinceGo,
+      minDistToTarget: this.minDistToTarget,
+      trajectory: this.trajectory,
+    };
+  }
+
+  /**
+   * Runs the simulation without any rendering. Used by the level generator to PROVE a level is
+   * solvable and by tests. Uses the exact same physics code path as the real game.
+   */
+  public runHeadless(maxSteps: number = 1500) {
+    this.startSimulation();
+    for (let i = 0; i < maxSteps && !this.won && !this.hasFailed; i++) {
+      this.update(1 / 60);
+    }
+    this.isRunning = false;
+    return this.getRunStats();
   }
 
   public setSelectedGadgetId(id: string | null) {
@@ -119,9 +184,12 @@ export class PhysicsEngine {
   }
 
   private setupCollisionHandlers() {
-    Events.on(this.engine, 'collisionStart', (event) => {
+    this.collisionStartHandler = (event) => {
       for (const pair of event.pairs) {
         const { bodyA, bodyB } = pair;
+        const touchedAt = Date.now();
+        if (bodyA.label?.startsWith('primary_goal')) this.lastTouchTimeByBody.set(String(bodyA.id), touchedAt);
+        if (bodyB.label?.startsWith('primary_goal')) this.lastTouchTimeByBody.set(String(bodyB.id), touchedAt);
 
         // Check target goal sensor collision
         if (this.targetSensor && (bodyA === this.targetSensor || bodyB === this.targetSensor)) {
@@ -144,7 +212,7 @@ export class PhysicsEngine {
               x: Math.cos(normalAngle) * impulseStrength + (Math.random() - 0.5) * 0.002,
               y: Math.sin(normalAngle) * impulseStrength,
             });
-            sound.playBoing();
+            if (!this.silent) sound.playBoing();
             this.spawnImpactParticles(dynamicBody.position.x, dynamicBody.position.y, '#EC4899', 10);
           }
         }
@@ -161,7 +229,7 @@ export class PhysicsEngine {
               x: Math.cos(launchAngle) * force,
               y: Math.sin(launchAngle) * force - 0.015 * dynamicBody.mass,
             });
-            sound.playBoing();
+            if (!this.silent) sound.playBoing();
             this.spawnImpactParticles(dynamicBody.position.x, dynamicBody.position.y, '#F59E0B', 12);
           }
         }
@@ -169,7 +237,7 @@ export class PhysicsEngine {
         // General collision audio, squash-and-stretch & particle effect
         const relVel = Vector.magnitude(Vector.sub(bodyA.velocity, bodyB.velocity));
         if (relVel > 1.4) {
-          sound.playWoodClack();
+          if (!this.silent) sound.playWoodClack();
           this.lastImpactTime = Date.now();
           const midX = (bodyA.position.x + bodyB.position.x) / 2;
           const midY = (bodyA.position.y + bodyB.position.y) / 2;
@@ -180,7 +248,8 @@ export class PhysicsEngine {
           if (this.collisionCallback) this.collisionCallback();
         }
       }
-    });
+    };
+    Events.on(this.engine, 'collisionStart', this.collisionStartHandler);
   }
 
   public loadLevel(level: LevelDefinition, gadgets: PlacedGadget[] = []) {
@@ -188,14 +257,23 @@ export class PhysicsEngine {
     this.placedGadgets = [...gadgets];
     this.won = false;
     this.hasTriggeredWin = false;
+    this.hasFailed = false;
+    this.stillSteps = 0;
+    this.minDistToTarget = Infinity;
+    this.trajectory = [];
+    this.bgCache = null;
     this.isRunning = false;
     this.particles = [];
     this.confetti = [];
+
+    // Gravity twist levels (e.g. floaty "moon" levels)
+    this.engine.gravity.y = 1.1 * (level.gravityScale ?? 1);
 
     // Clear world
     World.clear(this.world, false);
     Engine.clear(this.engine);
     this.dynamicBodies.clear();
+    this.lastTouchTimeByBody.clear();
     this.gadgetBodies = [];
     this.staticObstacleBodies = [];
 
@@ -381,6 +459,10 @@ export class PhysicsEngine {
     this.isRunning = true;
     this.won = false;
     this.hasTriggeredWin = false;
+    this.hasFailed = false;
+    this.stillSteps = 0;
+    this.minDistToTarget = Infinity;
+    this.trajectory = [];
     this.physicsUpdatesSinceGo = 0;
 
     // Wake up dynamic objects and clear velocities
@@ -404,6 +486,10 @@ export class PhysicsEngine {
     this.isRunning = false;
     this.won = false;
     this.hasTriggeredWin = false;
+    this.hasFailed = false;
+    this.stillSteps = 0;
+    this.minDistToTarget = Infinity;
+    this.trajectory = [];
     this.physicsUpdatesSinceGo = 0;
     this.particles = [];
     this.confetti = [];
@@ -421,12 +507,18 @@ export class PhysicsEngine {
     this.rebuildGadgetBodies();
   }
 
+  private handleFail(reason: 'stuck' | 'timeout') {
+    if (this.hasFailed || this.hasTriggeredWin) return;
+    this.hasFailed = true;
+    if (this.failCallback) this.failCallback(reason);
+  }
+
   private handleWin() {
     if (this.hasTriggeredWin) return;
     this.hasTriggeredWin = true;
     this.won = true;
-    sound.playDing();
-    sound.playFanfare();
+    if (!this.silent) sound.playDing();
+    if (!this.silent) sound.playFanfare();
     this.spawnConfetti();
     if (this.winCallback) {
       this.winCallback();
@@ -543,6 +635,25 @@ export class PhysicsEngine {
             this.handleWin();
             break;
           }
+
+          // Track progress for near-miss feedback and fail detection
+          const dist = Math.hypot(entry.body.position.x - tz.x, entry.body.position.y - tz.y);
+          if (dist < this.minDistToTarget) this.minDistToTarget = dist;
+          if (this.physicsUpdatesSinceGo % 6 === 0) {
+            this.trajectory.push({ x: entry.body.position.x, y: entry.body.position.y });
+          }
+          const speed = Vector.magnitude(entry.body.velocity);
+          const moving = speed > 0.12 || Math.abs(entry.body.angularVelocity) > 0.02;
+          this.stillSteps = moving ? 0 : this.stillSteps + 1;
+        }
+      }
+
+      // Fail detection: hero came to rest away from the goal, or took far too long
+      if (!this.hasTriggeredWin && !this.hasFailed) {
+        if (this.stillSteps > 100) {
+          this.handleFail('stuck');
+        } else if (this.physicsUpdatesSinceGo > 1500) {
+          this.handleFail('timeout');
         }
       }
     }
@@ -581,8 +692,8 @@ export class PhysicsEngine {
 
     ctx.clearRect(0, 0, w, h);
 
-    // 1. Cozy room backdrop
-    this.drawRoomBackground(ctx, w, h);
+    // 1. Cozy room backdrop (cached + hue-shifted so every level looks different)
+    this.drawBackdrop(ctx, w, h);
 
     // 2. Ghost hint silhouette if active
     if (this.ghostHintGadget) {
@@ -615,6 +726,48 @@ export class PhysicsEngine {
     if (!this.isRunning && !this.won) {
       this.drawGoalIndicator(ctx);
     }
+  }
+
+  private drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    const hue = this.level.hueShift || 0;
+    const animatedWorld = this.level.worldId === 6 || this.level.worldId === 9;
+    if (hue === 0 && !animatedWorld) {
+      this.drawRoomBackground(ctx, w, h);
+      return;
+    }
+    const now = performance.now();
+    const stale = animatedWorld && now - this.bgLastRefresh > 120;
+    if (!this.bgCache || this.bgCacheLevel !== this.level || stale) {
+      if (!this.bgCache) {
+        this.bgCache = document.createElement('canvas');
+        this.bgCache.width = w;
+        this.bgCache.height = h;
+      }
+      const bctx = this.bgCache.getContext('2d');
+      if (!bctx) {
+        this.drawRoomBackground(ctx, w, h);
+        return;
+      }
+      bctx.clearRect(0, 0, w, h);
+      this.drawRoomBackground(bctx, w, h);
+      if (hue !== 0) {
+        // Re-tint once (not every frame): draw the finished backdrop through a hue filter
+        const tmp = document.createElement('canvas');
+        tmp.width = w;
+        tmp.height = h;
+        const tctx = tmp.getContext('2d');
+        if (tctx) {
+          tctx.filter = `hue-rotate(${hue}deg) saturate(1.08)`;
+          tctx.drawImage(this.bgCache, 0, 0);
+          tctx.filter = 'none';
+          bctx.clearRect(0, 0, w, h);
+          bctx.drawImage(tmp, 0, 0);
+        }
+      }
+      this.bgCacheLevel = this.level;
+      this.bgLastRefresh = now;
+    }
+    ctx.drawImage(this.bgCache, 0, 0);
   }
 
   private drawRoomBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
@@ -1171,6 +1324,10 @@ export class PhysicsEngine {
       ctx.fillText(`${Math.round(g.angle)}°`, 0, 54);
     }
 
+    if (this.level.hueShift) {
+      ctx.filter = `hue-rotate(${this.level.hueShift}deg) saturate(1.12)`;
+    }
+
     if (g.type === 'wood_ramp') {
       // Wooden Ramp
       ctx.fillStyle = '#92400E';
@@ -1566,6 +1723,18 @@ export class PhysicsEngine {
         shineColor = '#94A3B8';
       }
 
+      if (def.isPrimaryGoal && (def.type === 'ball_egg' || def.type === 'gumball')) {
+        const furColor = def.type === 'gumball' ? '#F9A8D4' : '#FCD98B';
+        this.drawFurRim(
+          ctx,
+          def.type === 'ball_egg' ? r * 0.9 : r,
+          def.type === 'ball_egg' ? r * 1.1 : r,
+          furColor,
+          body,
+          this.lastTouchTimeByBody.get(String(body.id)) ?? 0
+        );
+      }
+
       ctx.fillStyle = primaryColor;
       ctx.strokeStyle = '#0F172A';
       ctx.lineWidth = 2.5;
@@ -1597,6 +1766,43 @@ export class PhysicsEngine {
     }
 
     ctx.restore();
+  }
+
+  private drawFurRim(
+    ctx: CanvasRenderingContext2D,
+    radiusX: number,
+    radiusY: number,
+    color: string,
+    body: Matter.Body,
+    lastTouchedAt: number
+  ) {
+    const impact = Math.max(0, 1 - (Date.now() - lastTouchedAt) / 320);
+    const speed = Vector.magnitude(body.velocity);
+    const motionAngle = Math.atan2(body.velocity.y, body.velocity.x) - body.angle;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.7;
+    ctx.lineCap = 'round';
+
+    for (let i = 0; i < 44; i++) {
+      const angle = (i / 44) * Math.PI * 2;
+      const nx = Math.cos(angle);
+      const ny = Math.sin(angle);
+      const x = nx * radiusX;
+      const y = ny * radiusY;
+      const flutter = Math.sin(this.animationTime * (8 + speed * 0.3) + i * 1.73) * 1.2;
+      const impactLift = impact * 7 * Math.max(0, Math.cos(angle - motionAngle));
+      const length = 2.5 + flutter + impactLift;
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(
+        x + nx * (length * 0.55) - ny * 1.5,
+        y + ny * (length * 0.55) + nx * 1.5,
+        x + nx * length,
+        y + ny * length
+      );
+      ctx.stroke();
+    }
   }
 
   private drawExpressiveEyes(

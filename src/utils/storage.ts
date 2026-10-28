@@ -1,6 +1,11 @@
 import { PlayerProgress } from '../types/game';
+import { defaultEndless } from '../game/director';
 
 const STORAGE_KEY = 'oops_game_save_v1';
+
+function freshProgress(): PlayerProgress {
+  return { ...DEFAULT_PROGRESS, endless: defaultEndless() };
+}
 
 const DEFAULT_PROGRESS: PlayerProgress = {
   completedLevels: {},
@@ -15,16 +20,17 @@ const DEFAULT_PROGRESS: PlayerProgress = {
 export function loadPlayerProgress(): PlayerProgress {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_PROGRESS };
+    if (!raw) return freshProgress();
     const parsed = JSON.parse(raw);
     return {
       ...DEFAULT_PROGRESS,
       ...parsed,
       completedLevels: parsed.completedLevels || {},
+      endless: { ...defaultEndless(), ...(parsed.endless || {}) },
     };
   } catch (err) {
     console.warn('Failed to load OOPS! save data:', err);
-    return { ...DEFAULT_PROGRESS };
+    return freshProgress();
   }
 }
 
@@ -92,7 +98,7 @@ export function resetAllSaveData(): PlayerProgress {
   } catch (e) {
     console.error(e);
   }
-  return { ...DEFAULT_PROGRESS };
+  return freshProgress();
 }
 
 export function unlockAllLevelsDev(current: PlayerProgress): PlayerProgress {

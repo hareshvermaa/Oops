@@ -94,7 +94,19 @@ export interface LevelDefinition {
   targetZone: TargetZone;
   intendedSolution: IntendedGadgetPlacement[];
   hintTip: string;
+  /** Endless-mode extras (all optional so hand-made levels keep working) */
+  generated?: boolean;
+  difficulty?: number; // 0..1
+  gravityScale?: number; // 1 = normal, <1 floaty
+  twist?: LevelTwist;
+  hueShift?: number; // degrees applied to the backdrop for visual variety
+  tier?: LevelTier;
+  rewardMultiplier?: number;
+  introGadget?: GadgetType;
 }
+
+export type LevelTwist = 'moon' | 'bouncy' | null;
+export type LevelTier = 'normal' | 'relief' | 'breather' | 'twist' | 'lucky' | 'intro' | 'tutorial';
 
 export interface WorldInfo {
   id: number;
@@ -114,8 +126,39 @@ export interface LevelProgress {
   gadgetsUsed: number;
 }
 
+export interface EndlessState {
+  seed: number; // per-player seed so nobody (not even the creator) can predict the sequence
+  level: number; // next level number to play (1-based, unbounded)
+  skill: number; // 0..1 rolling estimate of the player's skill
+  frustration: number; // 0..1 decays on wins, rises on fails/hint use
+  streak: number; // consecutive levels won without 3+ fails
+  bestStreak: number;
+  sinceBreather: number; // levels since last easy "victory lap"
+  sinceTwist: number;
+  sinceEgg: number; // pity counter for mystery eggs
+  totalWins: number;
+  totalFails: number;
+  totalStars: number;
+  coins: number;
+  gems: number;
+  pals: string[]; // collected pal ids
+  gadgetCards: GadgetType[];
+  collectionRewardClaimed: boolean;
+  villageLevels: number[];
+  dailySpinClaimDay: string;
+  bestMiniScore: number;
+  mechanicsSeen: GadgetType[];
+  lastWorld: number;
+  lastHue: number;
+  lastDifficulty: number;
+  dailyLastClaim: string; // YYYY-MM-DD
+  dailyStreak: number;
+  recent: number[]; // last performance scores (0..1)
+}
+
 export interface PlayerProgress {
   completedLevels: Record<number, LevelProgress>;
+  endless?: EndlessState;
   unlockedWorldMax: number;
   hintsRemaining: number;
   soundEnabled: boolean;
